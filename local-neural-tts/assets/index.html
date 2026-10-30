@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>本地神经语音合成 · 控制台</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#121a30; --panel2:#0f1729; --line:#23304f;
+    --txt:#e8eefc; --muted:#8fa3c8; --accent:#5b8cff; --accent2:#37e0c8;
+    --gold:#e9c46a; --ok:#37e0c8; --warn:#f4a261; --err:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:radial-gradient(1200px 600px at 70% -10%,#16224a 0%,var(--bg) 55%) fixed;
+    color:var(--txt); min-height:100vh; display:flex; justify-content:center; padding:28px 16px;
+  }
+  .wrap{width:100%; max-width:760px}
+  header{display:flex; align-items:center; gap:14px; margin-bottom:18px}
+  .logo{
+    width:46px;height:46px;border-radius:14px;flex:0 0 auto;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:flex;align-items:center;justify-content:center;font-size:24px;
+    box-shadow:0 6px 20px rgba(91,140,255,.35);
+  }
+  h1{font-size:21px;margin:0;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:13px;margin-top:3px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:16px;
+    box-shadow:0 10px 40px rgba(0,0,0,.35)}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .status{display:inline-flex;align-items:center;gap:8px;font-size:13px;
+    padding:6px 12px;border-radius:999px;background:#0c1426;border:1px solid var(--line)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 0 rgba(0,0,0,0)}
+  .dot.run{background:var(--ok);animation:pulse 1.6s infinite}
+  .dot.load{background:var(--warn);animation:pulse 1.6s infinite}
+  .dot.err{background:var(--err)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,224,200,.5)}70%{box-shadow:0 0 0 8px rgba(55,224,200,0)}100%{box-shadow:0 0 0 0 rgba(55,224,200,0)}}
+  label{font-size:13px;color:var(--muted);display:block;margin:0 0 6px}
+  textarea{
+    width:100%;min-height:120px;resize:vertical;border-radius:12px;padding:14px;
+    background:#0a1124;color:var(--txt);border:1px solid var(--line);font-size:15px;line-height:1.6;
+  }
+  textarea:focus{outline:none;border-color:var(--accent)}
+  select{
+    background:#0a1124;color:var(--txt);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;font-size:14px;min-width:150px;
+  }
+  .btn{
+    border:none;border-radius:12px;padding:13px 22px;font-size:15px;font-weight:600;
+    cursor:pointer;color:#06122b;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    box-shadow:0 8px 22px rgba(91,140,255,.35);transition:transform .08s ease,opacity .2s;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+  .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);box-shadow:none}
+  .meta{font-size:13px;color:var(--muted);margin-top:10px;min-height:18px}
+  .meta b{color:var(--txt)}
+  audio{width:100%;margin-top:14px;border-radius:10px}
+  .result{margin-top:8px}
+  .hidden{display:none}
+  details{margin-top:6px}
+  summary{cursor:pointer;color:var(--muted);font-size:13px;user-select:none}
+  pre{background:#070d1c;border:1px solid var(--line);border-radius:10px;padding:12px;
+    max-height:200px;overflow:auto;font-size:12px;color:#9fb4dd;white-space:pre-wrap;margin:8px 0 0}
+  .tip{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .tip b{color:var(--gold)}
+  .examples{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{font-size:12px;color:var(--accent);border:1px solid var(--line);border-radius:999px;
+    padding:5px 12px;cursor:pointer;background:#0c1426}
+  .chip:hover{border-color:var(--accent)}
+  footer{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🎙️</div>
+    <div>
+      <h1>本地神经语音合成</h1>
+      <div class="sub">完全离线 · Qwen3-TTS 1.7B · CPU 推理 · 数据不出本机</div>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="status">
+        <span id="dot" class="dot"></span>
+        <span id="statusText">检测中…</span>
+      </div>
+      <button id="stopBtn" class="btn ghost">停止引擎</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="text">输入要合成的文本</label>
+    <textarea id="text" placeholder="例如：很多人好奇，WorkBuddy 怎么做应用开发？&#10;支持中文 / 英文 / 日文 / 韩文，最长 2000 字。"></textarea>
+    <div class="examples" id="examples">
+      <span class="chip">很多人好奇，WorkBuddy 怎么做应用开发？</span>
+      <span class="chip">今天天气真不错，咱们出去走走吧。</span>
+      <span class="chip">Hello, this is a local neural voice test.</span>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+      <div>
+        <label for="voice">音色</label>
+        <select id="voice">
+          <option value="default">默认（温柔女声）</option>
+          <option value="dongbei">东北话</option>
+          <option value="sichuan">四川话</option>
+        </select>
+      </div>
+      <div>
+        <label for="lang">语言</label>
+        <select id="lang">
+          <option value="Chinese">中文</option>
+          <option value="English">英文</option>
+          <option value="Japanese">日文</option>
+          <option value="Korean">韩文</option>
+          <option value="Auto">自动</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:18px">
+      <button id="genBtn" class="btn">▶ 生成语音</button>
+      <div class="meta" id="meta">就绪</div>
+    </div>
+
+    <div class="result hidden" id="result">
+      <audio id="audio" controls></audio>
+      <div class="row" style="margin-top:12px">
+        <a id="dl" class="btn ghost" download="tts.wav">⬇ 下载 WAV</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>引擎加载日志 / 运行信息</summary>
+      <pre id="log">（暂无）</pre>
+    </details>
+    <div class="tip">
+      首次生成会编译模型（约 1–2 分钟），之后复用常驻服务，单句约 <b>35–40 秒</b>。
+      引擎占用约 <b>5.4GB 内存</b>，不用时点「停止引擎」即可释放。全部文件落在 <b>D 盘</b>，C 盘零占用。
+    </div>
+  </div>
+
+  <footer>本地开源 TTS · 浏览器控制台 · 双击 start_local_tts.bat 即可使用</footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const dot = $("dot"), statusText = $("statusText"), meta = $("meta");
+const genBtn = $("genBtn"), stopBtn = $("stopBtn");
+const result = $("result"), audio = $("audio"), dl = $("dl"), logEl = $("log");
+
+let generating = false;
+let statusTimer = null;
+
+function setStatus(state, text){
+  dot.className = "dot" + (state==="running"?" run":state==="loading"?" load":state==="error"?" err":"");
+  statusText.textContent = text;
+}
+
+// 后端地址探测：优先用相对路径（页面由 8778 直接提供时），
+// 若相对路径不是我们的后端（如在 WorkBuddy 预览面板 / file:// 打开），
+// 自动回退到 http://localhost:8778（配合服务端的 CORS 头实现跨端口访问）。
+let BACKEND = "";
+let BACKEND_RESOLVED = false;
+
+async function apiFetch(path, opts){
+  const bases = BACKEND_RESOLVED ? [BACKEND] : ["", "http://localhost:8778"];
+  let err = null;
+  for(const base of bases){
+    try{
+      const r = await fetch(base + path, Object.assign({mode:"cors"}, opts||{}));
+      // 200/503/400/500 视为命中我们的后端，直接返回；404 则继续试下一个地址。
+      if(r.ok || r.status===503 || r.status===400 || r.status===500){
+        if(!BACKEND_RESOLVED){ BACKEND = base; BACKEND_RESOLVED = true; }
+        return r;
+      }
+      err = new Error("HTTP "+r.status);
+    }catch(e){ err = e; }
+  }
+  throw err || new Error("无法连接控制台");
+}
+
+async function refreshStatus(){
+  try{
+    const r = await apiFetch("/api/status");
+    const d = await r.json();
+    if(d.running){
+      setStatus("running", `就绪 · ${d.device||"CPU"} · 已运行 ${Math.round(d.uptime_s)}s`);
+    }else if(d.state==="error"){
+      setStatus("error", "引擎出错，请查看日志");
+    }else{
+      setStatus("loading", d.message || "引擎加载中…");
+    }
+    // 日志
+    const lr = await apiFetch("/api/engine-log");
+    const ld = await lr.json();
+    if(ld.lines && ld.lines.length) logEl.textContent = ld.lines.join("\n");
+  }catch(e){
+    dot.className = "dot err";
+    statusText.innerHTML = '无法连接控制台 · <a href="http://localhost:8778" target="_blank" style="color:var(--accent);text-decoration:underline">点此在浏览器打开</a>';
+  }
+}
+
+async function generate(){
+  if(generating) return;
+  const text = $("text").value.trim();
+  if(!text){ meta.textContent = "⚠ 请先输入文本"; return; }
+  generating = true;
+  genBtn.disabled = true;
+  result.classList.add("hidden");
+  meta.textContent = "⏳ 生成中…（首次编译约 1–2 分钟，请耐心等待）";
+  try{
+    const r = await apiFetch("/api/tts", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ text, voice:$("voice").value, language:$("lang").value })
+    });
+    if(r.ok && r.headers.get("Content-Type").includes("audio")){
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      audio.src = url;
+      dl.href = url;
+      result.classList.remove("hidden");
+      const dur = parseFloat(r.headers.get("X-TTS-Duration")||"0").toFixed(2);
+      const rtf = parseFloat(r.headers.get("X-TTS-RTF")||"0").toFixed(2);
+      const dev = r.headers.get("X-TTS-Device")||"CPU";
+      const vc  = r.headers.get("X-TTS-Voice")||$("voice").value;
+      meta.innerHTML = `✅ 完成 · 音色 <b>${vc}</b> · 时长 <b>${dur}s</b> · 实时率 <b>${rtf}x</b> · 设备 <b>${dev}</b>`;
+      audio.play().catch(()=>{});
+    }else{
+      let msg = "生成失败";
+      try{ const e = await r.json(); msg = e.error || msg; }catch(_){}
+      meta.textContent = "❌ " + msg;
+    }
+  }catch(e){
+    meta.textContent = "❌ 网络错误：" + e.message;
+  }finally{
+    generating = false;
+    genBtn.disabled = false;
+  }
+}
+
+async function stopEngine(){
+  stopBtn.disabled = true;
+  meta.textContent = "⏳ 正在停止引擎…";
+  try{
+    await apiFetch("/api/shutdown", {method:"POST"});
+    setStatus("", "引擎已停止");
+    meta.textContent = "已停止引擎（释放内存）。点「生成」会重新拉起。";
+  }catch(e){
+    meta.textContent = "停止失败：" + e.message;
+  }finally{
+    stopBtn.disabled = false;
+  }
+}
+
+// 事件
+genBtn.addEventListener("click", generate);
+stopBtn.addEventListener("click", stopEngine);
+$("examples").addEventListener("click", (e)=>{
+  if(e.target.classList.contains("chip")){ $("text").value = e.target.textContent; }
+});
+
+// 轮询：空闲时每 3s 刷新状态
+refreshStatus();
+statusTimer = setInterval(()=>{ if(!generating) refreshStatus(); }, 3000);
+</script>
+</body>
+</html>
