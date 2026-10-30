@@ -45,7 +45,7 @@ local-neural-tts-skill/
 
 ---
 
-## 🚀 安装与食用方法
+## 🚀 安装与使用方法
 
 ### 方式 A：作为 WorkBuddy Skill 使用（推荐）
 
