@@ -194,10 +194,18 @@ async function refreshStatus(){
     const d = await r.json();
     if(d.running){
       setStatus("running", `就绪 · ${d.device||"CPU"} · 已运行 ${Math.round(d.uptime_s)}s`);
+      stopBtn.textContent = "停止引擎";
+      stopBtn.disabled = false;
+    }else if(d.state==="stopped"){
+      setStatus("load", "引擎已停止（点「启动引擎」重新拉起）");
+      stopBtn.textContent = "🚀 启动引擎";
+      stopBtn.disabled = false;
     }else if(d.state==="error"){
       setStatus("error", "引擎出错，请查看日志");
+      stopBtn.disabled = false;
     }else{
-      setStatus("loading", d.message || "引擎加载中…");
+      setStatus("load", d.message || "引擎加载中…");
+      stopBtn.disabled = true;
     }
     // 日志
     const lr = await apiFetch("/api/engine-log");
@@ -253,10 +261,32 @@ async function stopEngine(){
   meta.textContent = "⏳ 正在停止引擎…";
   try{
     await apiFetch("/api/shutdown", {method:"POST"});
-    setStatus("", "引擎已停止");
-    meta.textContent = "已停止引擎（释放内存）。点「生成」会重新拉起。";
+    setStatus("load", "引擎已停止（释放内存）");
+    meta.textContent = "已停止引擎。点「启动引擎」或「生成语音」可重新拉起。";
+    stopBtn.textContent = "🚀 启动引擎";
+    stopBtn.disabled = false;
   }catch(e){
     meta.textContent = "停止失败：" + e.message;
+    stopBtn.disabled = false;
+  }
+}
+
+async function startEngine(){
+  stopBtn.disabled = true;
+  meta.textContent = "⏳ 正在启动引擎…";
+  try{
+    const r = await apiFetch("/api/start", {method:"POST"});
+    const d = await r.json();
+    if(d.state === "started" || d.state === "running"){
+      setStatus("running", "引擎已启动");
+      meta.textContent = "引擎就绪。";
+      stopBtn.textContent = "停止引擎";
+    }else{
+      setStatus("load", "引擎启动中…");
+      meta.textContent = "引擎加载中，请稍候…";
+    }
+  }catch(e){
+    meta.textContent = "启动失败：" + e.message;
   }finally{
     stopBtn.disabled = false;
   }
@@ -264,7 +294,14 @@ async function stopEngine(){
 
 // 事件
 genBtn.addEventListener("click", generate);
-stopBtn.addEventListener("click", stopEngine);
+stopBtn.addEventListener("click", (e) => {
+  // 根据按钮文本判断是停止还是启动
+  if(stopBtn.textContent.includes("启动")){
+    startEngine();
+  }else{
+    stopEngine();
+  }
+});
 $("examples").addEventListener("click", (e)=>{
   if(e.target.classList.contains("chip")){ $("text").value = e.target.textContent; }
 });

@@ -48,6 +48,9 @@ ENGINE_LOG = OPENVINO_ROOT / "log" / "tts-engine.log"
 BRIDGE_LOG = OPENVINO_ROOT / "log" / "tts-web-bridge.log"
 OUTPUTS_DIR = SKILL_ROOT / "assets" / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+# 确保日志目录存在（避免 FileHandler 因父目录缺失而崩溃）
+OPENVINO_ROOT.mkdir(parents=True, exist_ok=True)
+(OPENVINO_ROOT / "log").mkdir(parents=True, exist_ok=True)
 
 # CORS：允许页面从任意来源（含 WorkBuddy 预览面板、file://）调用本控制台接口，
 # 这样即便页面不是直接由 8778 提供，也能跨端口访问。
@@ -60,6 +63,7 @@ CORS_HEADERS = {
 # 引擎进程句柄（由本桥拉起）
 _engine_proc = None
 _engine_lock = threading.Lock()
+_manual_stop = False  # 用户手动停止后设为 True，阻止轮询自动重启
 
 # ----------------------------- 日志 -----------------------------
 logging.basicConfig(
@@ -85,16 +89,21 @@ def engine_is_up() -> bool:
         return False
 
 
-def ensure_engine() -> str:
-    """确保引擎运行。返回状态：'running'(已在跑) / 'started'(刚拉起) / 'no_venv'(未安装) 。"""
+def ensure_engine(allow_start: bool = True) -> str:
+    """确保引擎运行。返回状态：'running'(已在跑) / 'started'(刚拉起) / 'no_venv'(未安装) / 'stopped'(手动停止)。"""
+    global _manual_stop
     if engine_is_up():
         return "running"
     if not venv_ready():
         return "no_venv"
+    if _manual_stop:
+        return "stopped"
     with _engine_lock:
         global _engine_proc
         if _engine_proc is not None and _engine_proc.poll() is None:
             return "started"
+        if not allow_start:
+            return "stopped"
         env = dict(os.environ)
         env["LOCAL_TTS_SKILL_ROOT"] = str(SKILL_ROOT)
         log.info("拉起 TTS 引擎: %s %s", VENV_PY, SERVER_PY)
@@ -188,6 +197,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/shutdown":
             self._api_shutdown()
             return
+        if path == "/api/start":
+            self._api_start()
+            return
         self._send_json(404, {"ok": False, "error": "not found"})
 
     # ---- 接口实现 ----
@@ -199,12 +211,12 @@ class Handler(BaseHTTPRequestHandler):
                 "message": "环境尚未安装：请先运行 scripts/install_env.py 完成 venv 与模型下载。",
             })
             return
-        ensure_engine()
+        ensure_engine(allow_start=False)  # 轮询时不自动重启
         if not engine_is_up():
             self._send_json(200, {
-                "ok": True, "running": False, "state": "starting",
+                "ok": True, "running": False, "state": "stopped",
                 "device": None, "uptime_s": 0, "pid": None,
-                "message": "引擎正在启动 / 加载模型，请稍候…",
+                "message": "引擎已停止（点「启动引擎」重新拉起）",
             })
             return
         reply = pipe_request({"op": "status"}, timeout=10.0)
@@ -233,14 +245,12 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True, "lines": tail})
 
     def _api_tts(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(length) if length else b"{}"
-            payload = json.loads(raw.decode("utf-8") or "{}")
-        except Exception as exc:
-            self._send_json(400, {"ok": False, "error": f"请求解析失败: {exc}"})
-            return
-
+            payload = json.loads(raw)
+        except Exception:
+            payload = {}
         text = (payload.get("text") or "").strip()
         if not text:
             self._send_json(400, {"ok": False, "error": "请输入要合成的文本"})
@@ -254,7 +264,8 @@ class Handler(BaseHTTPRequestHandler):
         if not venv_ready():
             self._send_json(503, {"ok": False, "error": "环境尚未安装，请先运行 install_env.py"})
             return
-        ensure_engine()
+        # 合成请求时允许自动拉起引擎
+        ensure_engine(allow_start=True)
         if not engine_is_up():
             self._send_json(503, {"ok": False, "error": "引擎尚未就绪，请稍候再试"})
             return
@@ -293,25 +304,39 @@ class Handler(BaseHTTPRequestHandler):
                  reply.get("duration_s", 0), reply.get("rtf", 0))
 
     def _api_shutdown(self):
+        global _manual_stop
+        _manual_stop = True
         reply = pipe_request({"op": "shutdown", "timeout": 8.0}, timeout=12.0)
         self._send_json(200, {"ok": True, "reply": reply})
+
+    def _api_start(self):
+        """用户主动请求启动引擎（清除 manual_stop 标志）。"""
+        global _manual_stop
+        _manual_stop = False
+        state = ensure_engine(allow_start=True)
+        self._send_json(200, {"ok": True, "state": state})
 
     def log_message(self, fmt, *args):  # 静默默认访问日志
         return
 
 
 def main() -> int:
-    cleanup_old_outputs()
-    ensure_engine()  # 启动时即预拉起引擎（若已安装）
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    log.info("Web 控制台已启动: http://localhost:%d", PORT)
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        log.info("收到中断，退出")
-    finally:
-        server.server_close()
-    return 0
+        cleanup_old_outputs()
+        ensure_engine()  # 启动时即预拉起引擎（若已安装）
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        log.info("Web 控制台已启动: http://localhost:%d", PORT)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            log.info("收到中断，退出")
+        finally:
+            server.server_close()
+    except Exception as exc:
+        log.exception("主循环异常退出: %s", exc)
+        import traceback
+        traceback.print_exc()
+    return 1
 
 
 if __name__ == "__main__":

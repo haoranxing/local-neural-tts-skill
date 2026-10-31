@@ -13,7 +13,7 @@
 - **完全离线**：推理在你本机 CPU 完成，不上传任何文本，不消耗云端积分。
 - **神经语音质量**：基于 Qwen3-TTS 1.7B（OpenVINO INT8），自然度远超系统自带 SAPI 机械音。
 - **三种音色**（离线可用）：默认（温柔女声）/ 东北话 / 四川话。
-- **可视化控制台**：暗色科技风网页，支持文本输入、音色/语言选择、在线试听、下载 WAV、引擎状态显示与一键停机。
+- **可视化控制台**：暗色科技风网页，支持文本输入、音色/语言选择、在线试听、下载 WAV、引擎状态显示，以及一键**停止/启动引擎**（停止后不会自动重启，内存可真正释放）。
 - **WebBuddy 内自然语言调用**：在 WorkBuddy 里说"帮我用本地语音合成配音"，AI 自动启动服务并合成。
 - **自包含 Skill**：不依赖外部路径，复制到 `~/.workbuddy/skills/` 即可被识别。
 
@@ -63,6 +63,20 @@ local-neural-tts-skill/
 → 粘贴文字、选音色、点「生成语音」、试听、下载。
 
 详见 `local-neural-tts/README-安装.txt`。
+
+---
+
+## 🔌 HTTP 接口（bridge_server.py · 端口 8778）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/status` | 引擎状态：`not_installed` / `loading` / `running` / `stopped` |
+| POST | `/api/tts` | 合成语音，返回 WAV 字节 + `X-TTS-Duration` / `X-TTS-RTF` 等响应头 |
+| GET | `/api/engine-log` | 引擎日志尾部（模型加载进度） |
+| POST | `/api/shutdown` | 停止引擎释放内存；设置 `manual_stop`，之后**不会自动重启** |
+| POST | `/api/start` | 手动重新拉起引擎（清除 `manual_stop` 标志） |
+
+> 停止后控制台按钮会切换为「🚀 启动引擎」，点击即调用 `/api/start`。
 
 ---
 

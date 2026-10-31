@@ -54,6 +54,8 @@ description: 本地离线神经语音（TTS）合成与可视化控制台。基�
    - **A. 浏览器控制台（推荐给用户自助）**：
      告诉用户访问 `http://localhost:8778`（或直接用系统命令打开浏览器）。
      页面支持：粘贴文本、选音色/语言、在线试听、下载 WAV、看引擎状态、停止引擎。
+     注意：点「停止引擎」后引擎**不会自动重启**，按钮会切换为「🚀 启动引擎」，
+     需要时再手动点一次重新拉起（对应 `POST /api/start`）。
    - **B. 直接合成（用户给文本，你帮他出文件）**：
      调用 `POST http://localhost:8778/api/tts`，JSON 体：
      ```json
@@ -71,6 +73,14 @@ description: 本地离线神经语音（TTS）合成与可视化控制台。基�
 - **CPU 推理，非 GPU**：首句含模型编译约 1–2 分钟；之后复用常驻引擎，单句约 **35–40 秒**。
   比云端 TTS 慢是预期内的，换来"完全离线、不耗积分、可换音色"。
 - 引擎常驻占 ~5.4GB 内存；不用时调用 `POST /api/shutdown` 或点页面「停止引擎」释放。
+  停止后引擎保持停止（不会自动重启）；需要恢复时调用 `POST /api/start` 或点页面「🚀 启动引擎」。
+
+## HTTP 接口速查（bridge_server.py，端口 8778）
+- `GET  /api/status`     引擎状态（state: not_installed / loading / running / stopped）
+- `POST /api/tts`        合成语音（返回 WAV 字节 + 元信息头）
+- `GET  /api/engine-log` 引擎日志尾部（加载进度）
+- `POST /api/shutdown`   停止引擎并释放内存（设置 manual_stop，之后**不会自动重启**）
+- `POST /api/start`      手动重新拉起引擎（清除 manual_stop 标志）
 
 ## 注意事项 / 合规
 - 本 skill 提供的是高仿真人声合成，**属深度合成技术**。若对外发布合成语音，请遵守当地法规
